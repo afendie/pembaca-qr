@@ -28,13 +28,9 @@
       animation: scan 2.5s infinite linear;
       z-index: 10; pointer-events: none;
     }
-    .laser-amber {
-      background-color: #f59e0b;
-      box-shadow: 0 0 15px 3px rgba(245, 158, 11, 0.8);
-    }
+    .laser-amber { background-color: #f59e0b; box-shadow: 0 0 15px 3px rgba(245, 158, 11, 0.8); }
     
     @keyframes scan { 0% { top: 0%; opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } 100% { top: 100%; opacity: 0; } }
-
     .hide-scrollbar::-webkit-scrollbar { display: none; }
     .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     .swal2-container { z-index: 99999 !important; }
@@ -64,15 +60,6 @@
       <button onclick="startScanner()" class="w-full max-w-xs py-4 mb-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-emerald-500/30 active:scale-95 transition-all">
         <i class="fas fa-play mr-2"></i> Mula Mengimbas Rakan
       </button>
-      <button onclick="toggleCheckoutMode()" class="w-full max-w-xs py-4 border border-amber-500/30 text-amber-500 hover:bg-amber-500/10 rounded-2xl font-black text-[10px] uppercase tracking-widest active:scale-95 transition-all">
-        <i class="fas fa-person-walking-arrow-right mr-2"></i> Tiada Pengganti? Tamat Tugas
-      </button>
-    </div>
-
-    <!-- Amaran Checkout Mode -->
-    <div id="checkout-alert" class="hidden w-full max-w-sm bg-amber-500/10 border border-amber-500/50 p-4 rounded-2xl mb-4 text-center">
-      <p class="text-xs font-black text-amber-500 uppercase tracking-widest"><i class="fas fa-exclamation-triangle mr-2"></i> MOD TIADA PENGGANTI</p>
-      <p class="text-[9px] text-amber-200 uppercase tracking-widest mt-1 font-bold">Sila imbas Kod QR ANDA SENDIRI untuk pengesahan tamat tugas.</p>
     </div>
 
     <div class="relative w-full max-w-sm rounded-[1.5rem] overflow-hidden shadow-2xl border-4 border-slate-700/50 bg-black">
@@ -97,51 +84,31 @@
     </div>
   </div>
 
-  <!-- Bunyi Pengesahan (Beep) -->
-  <!-- Boleh gunakan base64 untuk memastikan bunyi dimuatkan pantas tanpa block CORS -->
   <audio id="beep-sound" preload="auto">
     <source src="https://actions.google.com/sounds/v1/ui/beep_short.ogg" type="audio/mpeg">
   </audio>
 
   <script>
-    // Dapatkan Parameter URL Dinamik dari Induk
     const urlParams = new URLSearchParams(window.location.search);
     const API_URL = urlParams.get('api');
     const TOKEN = urlParams.get('token');
     const LOC_ID = urlParams.get('locId');
+    const SCANNER_ID = urlParams.get('scannerId'); // TUKANG IMBAS
     
     let html5QrcodeScanner = null;
     let isProcessing = false;
     let scanHistory = [];
-    
-    // Status Mod: 'scan' (Rantaian Biasa) atau 'checkout_only' (Tiada Pengganti)
-    let currentMode = 'scan'; 
 
-    function toggleCheckoutMode() {
-      currentMode = 'checkout_only';
-      
-      // Tukar UI Kepada Tema Kuning Amaran
-      document.getElementById('header-icon').className = 'w-10 h-10 bg-amber-600 rounded-xl flex items-center justify-center shadow-lg shadow-amber-500/30 transition-colors';
-      document.getElementById('header-subtitle').className = 'text-[9px] font-bold text-amber-400 uppercase tracking-widest mt-0.5 transition-colors';
-      document.getElementById('header-subtitle').innerText = 'Mod Tamat Kendiri';
-      document.getElementById('checkout-alert').classList.remove('hidden');
-      
-      startScanner(true);
-    }
-
-    function startScanner(isAmber = false) {
-      if (!API_URL || !TOKEN) {
-        Swal.fire({ title: 'Ralat Sekuriti', text: 'Pautan tidak sah. Sila buka pengimbas ini terus melalui sistem utama.', icon: 'error', customClass: { popup: 'rounded-3xl' } });
+    function startScanner() {
+      if (!API_URL || !TOKEN || !SCANNER_ID) {
+        Swal.fire({ title: 'Ralat Sekuriti', text: 'Pautan tidak sah atau anda belum mendaftar masuk sebagai Tukang Imbas.', icon: 'error', customClass: { popup: 'rounded-3xl' } });
         return;
       }
 
       document.getElementById('start-overlay').classList.add('hidden');
-      const laser = document.getElementById('laser');
-      laser.classList.remove('hidden');
-      if (isAmber) laser.classList.add('laser-amber');
+      document.getElementById('laser').classList.remove('hidden');
 
       html5QrcodeScanner = new Html5Qrcode("reader");
-      
       const config = { fps: 10, qrbox: { width: 250, height: 250 }, aspectRatio: 1.0 };
       
       html5QrcodeScanner.start({ facingMode: "environment" }, config, onScanSuccess, onScanFailure)
@@ -154,63 +121,33 @@
       if (isProcessing) return;
       isProcessing = true;
       
-      // Hentikan sementara pengimbas untuk pemprosesan API
-      if (html5QrcodeScanner) {
-        html5QrcodeScanner.pause(true);
-      }
+      if (html5QrcodeScanner) html5QrcodeScanner.pause(true);
       document.getElementById('laser').classList.add('hidden');
-      
-      document.getElementById('beep-sound').play().catch(e => console.log('Audio disekat oleh pelayar sehingga interaksi pengguna berlaku'));
+      document.getElementById('beep-sound').play().catch(e => console.log('Audio disekat'));
 
-      // Tunjuk Notifikasi Proses
       Swal.fire({
-        title: 'Mengesahkan...',
-        html: '<div class="w-10 h-10 border-4 border-slate-200 border-t-blue-600 rounded-full animate-spin mx-auto mt-2"></div>',
-        showConfirmButton: false,
-        allowOutsideClick: false,
-        background: '#1e293b',
-        color: '#fff',
-        customClass: { popup: 'rounded-3xl' }
+        title: 'Mengesahkan...', html: '<div class="w-10 h-10 border-4 border-slate-200 border-t-blue-600 rounded-full animate-spin mx-auto mt-2"></div>',
+        showConfirmButton: false, allowOutsideClick: false, background: '#1e293b', color: '#fff', customClass: { popup: 'rounded-3xl' }
       });
 
-      // Bina Payload Keselamatan untuk dihantar ke Google Apps Script
       const payload = {
         token: TOKEN,
         locId: LOC_ID,
-        scannedData: decodedText,
-        action: currentMode
+        scannerId: SCANNER_ID, // SUNTIKAN: Membawa identiti orang yang baru sampai (Masuk)
+        scannedData: decodedText, // Data orang yang nak balik (Keluar)
+        action: 'scan'
       };
 
-      // POST Request ke API Google Apps Script (Bypass Preflight CORS dengan text/plain)
       fetch(API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify(payload)
+        method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload)
       })
       .then(response => response.json())
       .then(data => {
         if (data.success) {
-          Swal.fire({
-            icon: 'success',
-            title: 'Berjaya!',
-            text: data.msg,
-            timer: 2500,
-            showConfirmButton: false,
-            background: '#1e293b',
-            color: '#fff',
-            customClass: { popup: 'rounded-3xl' }
-          });
-          addLog(data.memName, data.memKp, true, data.msg);
+          Swal.fire({ icon: 'success', title: 'Berjaya!', text: data.msg, timer: 3000, showConfirmButton: false, background: '#1e293b', color: '#fff', customClass: { popup: 'rounded-3xl' } });
+          addLog(data.memName, '-', true, data.msg);
         } else {
-          Swal.fire({
-            icon: 'error',
-            title: 'Gagal',
-            text: data.msg,
-            background: '#1e293b',
-            color: '#fff',
-            confirmButtonColor: '#3b82f6',
-            customClass: { popup: 'rounded-3xl' }
-          });
+          Swal.fire({ icon: 'error', title: 'Gagal', text: data.msg, background: '#1e293b', color: '#fff', confirmButtonColor: '#3b82f6', customClass: { popup: 'rounded-3xl' } });
           addLog(decodedText.split('|')[0] || decodedText, '-', false, data.msg);
         }
       })
@@ -218,45 +155,30 @@
         Swal.fire({ icon: 'error', title: 'Ralat Sambungan', text: 'Gagal menyambung ke pangkalan data utama.', background: '#1e293b', color: '#fff', customClass: { popup: 'rounded-3xl' } });
       })
       .finally(() => {
-        // Debounce 3 saat sebelum kamera hidup semula (Mengelak Spam Imbasan pada QR yang sama)
         setTimeout(() => {
           isProcessing = false;
-          if (html5QrcodeScanner) {
-            html5QrcodeScanner.resume();
-            document.getElementById('laser').classList.remove('hidden');
-          }
+          if (html5QrcodeScanner) { html5QrcodeScanner.resume(); document.getElementById('laser').classList.remove('hidden'); }
         }, 3000);
       });
     }
 
-    function onScanFailure(error) {
-      // Abaikan. html5-qrcode sentiasa menembak ralat (callback) setiap saat ia tidak menemui corak QR yang sah
-    }
+    function onScanFailure(error) { }
 
     function addLog(name, kp, isSuccess, msg) {
       document.getElementById('empty-state').classList.add('hidden');
       const container = document.getElementById('log-container');
-      
       const timeStr = new Date().toLocaleTimeString('ms-MY', { hour: '2-digit', minute: '2-digit' });
-      
-      const themeColor = isSuccess ? (currentMode === 'checkout_only' ? 'amber' : 'emerald') : 'rose';
+      const themeColor = isSuccess ? 'emerald' : 'rose';
       const icon = isSuccess ? 'fa-check-circle' : 'fa-times-circle';
 
       const logHtml = `
         <div class="bg-slate-700/50 border border-slate-600 p-4 rounded-2xl flex items-start gap-4 animate-[fadeIn_0.3s_ease-out]">
-          <div class="w-10 h-10 rounded-xl bg-${themeColor}-500/20 text-${themeColor}-400 flex items-center justify-center shrink-0">
-            <i class="fas ${icon}"></i>
-          </div>
+          <div class="w-10 h-10 rounded-xl bg-${themeColor}-500/20 text-${themeColor}-400 flex items-center justify-center shrink-0"><i class="fas ${icon}"></i></div>
           <div class="flex-1 min-w-0">
-            <div class="flex justify-between items-start">
-              <p class="text-xs font-black text-white uppercase truncate">${name}</p>
-              <p class="text-[9px] font-bold text-slate-400 mt-0.5 ml-2 shrink-0">${timeStr}</p>
-            </div>
-            <p class="text-[10px] text-slate-400 font-mono mt-1">${kp}</p>
-            <p class="text-[9px] font-bold text-${themeColor}-400 uppercase tracking-widest mt-2">${msg}</p>
+            <div class="flex justify-between items-start"><p class="text-xs font-black text-white uppercase truncate">${name}</p><p class="text-[9px] font-bold text-slate-400 mt-0.5 ml-2 shrink-0">${timeStr}</p></div>
+            <p class="text-[9px] font-bold text-${themeColor}-400 uppercase tracking-widest mt-2 whitespace-pre-wrap">${msg}</p>
           </div>
-        </div>
-      `;
+        </div>`;
       
       container.insertAdjacentHTML('afterbegin', logHtml);
       scanHistory.push({name, success: isSuccess});
