@@ -67,6 +67,11 @@
       <div id="laser" class="hidden scanner-laser"></div>
     </div>
     
+    <!-- SUNTIKAN: Butang Selesai & Tutup Pengimbas -->
+    <button id="btn-stop-scanner" onclick="stopScannerAndSummary()" class="hidden w-full max-w-sm mt-5 py-4 bg-rose-600 hover:bg-rose-500 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-rose-500/30 active:scale-95 transition-all">
+      <i class="fas fa-stop-circle mr-2"></i> Selesai & Tutup Pengimbas
+    </button>
+    
   </div>
 
   <!-- Jejak Log (History) -->
@@ -98,6 +103,35 @@
     let html5QrcodeScanner = null;
     let isProcessing = false;
     let scanHistory = [];
+    
+    // Kunci Storan Tempatan Harian
+    const todayKey = 'rela_log_' + new Date().toISOString().split('T')[0];
+
+    // Muatkan log hari ini dari Local Storage (jika ada) bila halaman dibuka
+    window.onload = () => {
+      const saved = localStorage.getItem(todayKey);
+      if (saved) {
+        scanHistory = JSON.parse(saved);
+        document.getElementById('scan-count').innerText = `${scanHistory.length} Rekod`;
+        if (scanHistory.length > 0) document.getElementById('empty-state').classList.add('hidden');
+        
+        const container = document.getElementById('log-container');
+        // Render semua sejarah sebelumnya (reverse supaya yang terbaru di atas)
+        [...scanHistory].reverse().forEach(log => {
+          const themeColor = log.success ? 'emerald' : 'rose';
+          const icon = log.success ? 'fa-check-circle' : 'fa-times-circle';
+          const logHtml = `
+            <div class="bg-slate-700/50 border border-slate-600 p-4 rounded-2xl flex items-start gap-4">
+              <div class="w-10 h-10 rounded-xl bg-${themeColor}-500/20 text-${themeColor}-400 flex items-center justify-center shrink-0"><i class="fas ${icon}"></i></div>
+              <div class="flex-1 min-w-0">
+                <div class="flex justify-between items-start"><p class="text-xs font-black text-white uppercase truncate">${log.name}</p><p class="text-[9px] font-bold text-slate-400 mt-0.5 ml-2 shrink-0">${log.time}</p></div>
+                <p class="text-[9px] font-bold text-${themeColor}-400 uppercase tracking-widest mt-2 whitespace-pre-wrap">${log.msg}</p>
+              </div>
+            </div>`;
+          container.insertAdjacentHTML('beforeend', logHtml);
+        });
+      }
+    };
 
     function startScanner() {
       if (!API_URL || !TOKEN || !SCANNER_ID) {
@@ -107,6 +141,7 @@
 
       document.getElementById('start-overlay').classList.add('hidden');
       document.getElementById('laser').classList.remove('hidden');
+      document.getElementById('btn-stop-scanner').classList.remove('hidden'); // Papar butang selesai
 
       html5QrcodeScanner = new Html5Qrcode("reader");
       const config = { fps: 10, qrbox: { width: 250, height: 250 }, aspectRatio: 1.0 };
@@ -157,7 +192,11 @@
       .finally(() => {
         setTimeout(() => {
           isProcessing = false;
-          if (html5QrcodeScanner) { html5QrcodeScanner.resume(); document.getElementById('laser').classList.remove('hidden'); }
+          // Semak jika pengimbas masih berjalan (belum ditutup pengguna)
+          if (html5QrcodeScanner && html5QrcodeScanner.getState() === 2) { 
+            html5QrcodeScanner.resume(); 
+            document.getElementById('laser').classList.remove('hidden'); 
+          }
         }, 3000);
       });
     }
@@ -181,8 +220,38 @@
         </div>`;
       
       container.insertAdjacentHTML('afterbegin', logHtml);
-      scanHistory.push({name, success: isSuccess});
+      
+      // Kemas kini array dan simpan ke Local Storage
+      scanHistory.push({name: name, time: timeStr, success: isSuccess, msg: msg});
+      localStorage.setItem(todayKey, JSON.stringify(scanHistory));
+      
       document.getElementById('scan-count').innerText = `${scanHistory.length} Rekod`;
+    }
+
+    // FUNGSI BAHARU: Tutup Pengimbas dan Tunjuk Rumusan
+    function stopScannerAndSummary() {
+      if (html5QrcodeScanner) {
+        html5QrcodeScanner.stop().then(() => {
+          document.getElementById('laser').classList.add('hidden');
+          document.getElementById('btn-stop-scanner').classList.add('hidden');
+          
+          Swal.fire({
+            title: 'Sesi Ditamatkan',
+            text: `Anda telah merekodkan ${scanHistory.length} imbasan untuk hari ini.`,
+            icon: 'info',
+            confirmButtonText: 'Tutup Tetingkap',
+            background: '#1e293b',
+            color: '#fff',
+            customClass: { popup: 'rounded-3xl' }
+          }).then(() => {
+            window.close(); // Tutup tab browser secara automatik
+          });
+        }).catch(err => {
+          window.close();
+        });
+      } else {
+        window.close();
+      }
     }
   </script>
 </body>
