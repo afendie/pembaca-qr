@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Pengimbas QR</title>
+  
+  <!-- CSS & Pustaka -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  
+  <style>
+    body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #0f172a; color: #f8fafc; margin: 0; padding: 0; }
+    .glass-card { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3); }
+    #reader { width: 100%; border-radius: 1.5rem; overflow: hidden; border: none !important; }
+    #reader video { object-fit: cover !important; border-radius: 1.5rem; min-height: 300px; }
+    #reader__dashboard_section_csr span, #reader__dashboard_section_swaplink { display: none !important; }
+    @keyframes scan { 0% { top: 0; opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } 100% { top: 100%; opacity: 0; } }
+    .laser-line { animation: scan 2s ease-in-out infinite; }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col p-4 sm:p-6 justify-center items-center">
+
+  <main class="w-full max-w-md flex flex-col gap-6">
+    <header class="text-center mt-4">
+      <div class="w-16 h-16 bg-gradient-to-br from-blue-600 to-indigo-800 rounded-3xl flex items-center justify-center mx-auto mb-4 shadow-xl rotate-3 border border-blue-400/30">
+        <i class="fas fa-qrcode text-white text-2xl"></i>
+      </div>
+      <h1 class="text-xl font-extrabold tracking-tight text-white uppercase">Pengimbas QR</h1>
+      <p class="text-[10px] text-slate-400 font-bold uppercase tracking-[0.2em] mt-1">Lapor Diri / Serah Tugas</p>
+    </header>
+
+    <div class="glass-card rounded-[2.5rem] p-4 relative overflow-hidden">
+      <!-- Container Kamera -->
+      <div class="relative bg-black rounded-3xl overflow-hidden shadow-inner aspect-square flex items-center justify-center mb-4 border-2 border-slate-700">
+        <div id="reader" class="w-full h-full bg-black"></div>
+        <div class="absolute inset-0 pointer-events-none z-10 border-2 border-emerald-500/20 rounded-3xl overflow-hidden">
+          <div class="w-full h-1 bg-emerald-500 shadow-[0_0_15px_3px_rgba(16,185,129,0.5)] absolute top-0 left-0 laser-line"></div>
+        </div>
+      </div>
+      
+      <!-- Kawalan -->
+      <div class="flex gap-3">
+        <button onclick="switchCamera()" class="flex-1 py-4 bg-slate-800 hover:bg-slate-700 text-white rounded-2xl font-black text-xs uppercase tracking-widest transition-colors border border-slate-700 flex items-center justify-center gap-2">
+          <i class="fas fa-camera-rotate text-sm text-emerald-400"></i> Tukar Lensa
+        </button>
+      </div>
+    </div>
+
+    <div class="glass-card rounded-[2rem] p-5 border border-slate-800 text-center">
+      <h3 class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Status Log Kehadiran</h3>
+      <div id="statusText" class="text-xs font-bold uppercase tracking-wide text-amber-500 py-1">
+        Memuatkan Pengimbas...
+      </div>
+    </div>
+
+    <div class="glass-card rounded-[2rem] p-5 border border-slate-800">
+      <h3 class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3">Sejarah Sesi Ini</h3>
+      <div id="historyList" class="space-y-2 max-h-32 overflow-y-auto pr-1">
+        <div class="text-center py-4 text-[10px] font-bold text-slate-500 uppercase">
+          Tiada rekod imbasan dalam sesi ini
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    // Membaca URL Web App Apps Script secara dinamik dari URL ?api=...
+    const urlParams = new URLSearchParams(window.location.search);
+    const APPS_SCRIPT_URL = urlParams.get('api');
+
+    const scanHistory = [];
+    let lastScan = '';
+    let lastScanTime = 0;
+    
+    let scanner = null;
+    let availableCameras = [];
+    let currentCameraIndex = 0;
+
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    function beep() {
+      try {
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.frequency.value = 1200;
+        gain.gain.value = 0.3;
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.15);
+      } catch(e) {}
+    }
+
+    async function sendToSheet(barcode) {
+      const el = document.getElementById('statusText');
+      
+      if (!APPS_SCRIPT_URL) {
+        el.className = 'text-xs font-black uppercase text-rose-500';
+        el.textContent = 'Ralat: URL API tidak sah. Buka melalui butang sistem.';
+        return;
+      }
+
+      el.className = 'text-xs font-black uppercase text-blue-400 animate-pulse';
+      el.textContent = 'Menghantar Data...';
+
+      try {
+        await fetch(APPS_SCRIPT_URL, {
+          method: 'POST',
+          mode: 'no-cors', // Opaque response (Bypass sekatan origin)
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ barcode: barcode, scanDateObj: new Date().toISOString() })
+        });
+        
+        el.className = 'text-xs font-black uppercase text-emerald-400';
+        el.textContent = 'Berjaya Dihantar Ke Pangkalan!';
+        
+        // Kemaskini UI Sejarah Sesi
+        scanHistory.unshift({ barcode: barcode, time: new Date().toLocaleTimeString() });
+        updateHistory();
+        
+      } catch (err) {
+        el.className = 'text-xs font-black uppercase text-rose-500';
+        el.textContent = 'Ralat Talian: ' + err.message;
+      }
+    }
+
+    function onScanSuccess(decodedText) {
+      const now = Date.now();
+      // Debounce 3 saat elak imbasan bertindih
+      if (decodedText === lastScan && now - lastScanTime < 3000) return;
+      
+      lastScan = decodedText;
+      lastScanTime = now;
+      beep();
+      sendToSheet(decodedText);
+    }
+
+    function updateHistory() {
+      const histEl = document.getElementById('historyList');
+      histEl.innerHTML = scanHistory.slice(0, 10).map(i =>
+        `<div class="bg-slate-800/60 p-3 border border-slate-700/50 rounded-xl flex items-center justify-between text-xs font-bold text-slate-200">
+          <span class="truncate pr-4">${i.barcode}</span>
+          <span class="text-slate-500 text-[10px] tracking-widest">${i.time}</span>
+        </div>`
+      ).join('');
+    }
+
+    async function initCamera() {
+      try {
+        scanner = new Html5Qrcode('reader');
+        availableCameras = await Html5Qrcode.getCameras();
+        
+        if (availableCameras && availableCameras.length > 0) {
+          currentCameraIndex = availableCameras.length - 1; // Kamera Belakang
+          await startScannerWithId(availableCameras[currentCameraIndex].id);
+          document.getElementById('statusText').textContent = "Kamera Sedia. Sila Imbas QR.";
+          document.getElementById('statusText').className = "text-xs font-black uppercase text-emerald-500";
+        } else {
+          throw new Error("Tiada kamera dikesan.");
+        }
+      } catch (err) {
+        document.getElementById('statusText').textContent = "Kamera Disekat. Sila tekan 'Allow'.";
+        document.getElementById('statusText').className = "text-xs font-black uppercase text-rose-500";
+      }
+    }
+
+    async function startScannerWithId(cameraId) {
+      if (scanner && scanner.getState() === 2) {
+          await scanner.stop();
+      }
+      return scanner.start(
+        cameraId,
+        { fps: 10, qrbox: { width: 250, height: 250 }, aspectRatio: 1.0 },
+        onScanSuccess
+      );
+    }
+
+    async function switchCamera() {
+      if (availableCameras.length > 1 && scanner) {
+        currentCameraIndex = (currentCameraIndex + 1) % availableCameras.length;
+        await startScannerWithId(availableCameras[currentCameraIndex].id);
+      }
+    }
+
+    window.onload = function() {
+      if (!APPS_SCRIPT_URL) {
+         document.getElementById('statusText').textContent = "Ralat: URL API Pangkalan Data Kosong.";
+         document.getElementById('statusText').className = "text-xs font-black uppercase text-rose-500";
+      }
+      initCamera();
+    };
+  </script>
+</body>
+</html>
